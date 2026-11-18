@@ -1,0 +1,128 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function getUserRole() {
+      return request.auth.token.role;
+    }
+    
+    function isPlatformAdmin() {
+      return isAuthenticated() && (request.auth.token.role == 'platform_admin' || request.auth.token.isPlatformAdmin == true);
+    }
+    
+    function isInstructor() {
+      return isAuthenticated() && (request.auth.token.role == 'instructor' || isPlatformAdmin());
+    }
+
+    // 1. Users Collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      // Users can only update their profile fields (not roles, org permissions, or flags)
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) && 
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'isPlatformAdmin', 'isInstructor', 'organizationId', 'createdAt']);
+      allow delete: if isPlatformAdmin();
+    }
+
+    // 2. Organizations & Memberships
+    match /organizations/{orgId} {
+      allow read: if isAuthenticated();
+      allow write: if isPlatformAdmin();
+      
+      match /members/{memberId} {
+        allow read: if isAuthenticated();
+        allow write: if isPlatformAdmin();
+      }
+    }
+
+    // 3. Learning Paths, Courses & Modules
+    match /learning_paths/{pathId} {
+      allow read: if resource.data.isPublished == true || isInstructor();
+      allow write: if isInstructor();
+    }
+
+    match /courses/{courseId} {
+      allow read: if resource.data.isPublished == true || isInstructor();
+      allow write: if isInstructor();
+      
+      match /modules/{moduleId} {
+        allow read: if resource.data.isPublished == true || isInstructor();
+        allow write: if isInstructor();
+      }
+    }
+
+    // 4. Lessons & Media
+    match /lessons/{lessonId} {
+      allow read: if resource.data.isPublished == true || isInstructor();
+      allow write: if isInstructor();
+    }
+
+    // 5. Questions & Assessment Keys
+    // Sensitive answer keys and explanations are protected!
+    // Learners can only submit answers through Cloud Functions.
+    match /questions/{questionId} {
+      allow read: if isInstructor();
+      allow write: if isInstructor();
+    }
+
+    // 6. Enrollments & Progress
+    match /enrollments/{enrollmentId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isPlatformAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow delete: if isPlatformAdmin();
+    }
+
+    match /progress/{progressId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isPlatformAdmin());
+      allow create, update: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow delete: if isPlatformAdmin();
+    }
+
+    // 7. Assessment Attempts
+    match /assessment_attempts/{attemptId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isPlatformAdmin());
+      // Only Cloud Functions can grade and write certified scores!
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if false; // immutable from client side
+      allow delete: if isPlatformAdmin();
+    }
+
+    // 8. Bookmarks & Private Notes
+    match /bookmarks/{bookmarkId} {
+      allow read, write: if isAuthenticated() && (
+        (resource == null && request.resource.data.userId == request.auth.uid) ||
+        (resource != null && resource.data.userId == request.auth.uid)
+      );
+    }
+
+    match /notes/{noteId} {
+      allow read, write: if isAuthenticated() && (
+        (resource == null && request.resource.data.userId == request.auth.uid) ||
+        (resource != null && resource.data.userId == request.auth.uid)
+      );
+    }
+
+    // 9. Certificates
+    match /certificates/{certificateId} {
+      allow read: if isAuthenticated();
+      // Only server functions can issue valid certificates
+      allow write: if isPlatformAdmin();
+    }
+
+    // 10. Audit Logs
+    match /audit_logs/{logId} {
+      allow read: if isPlatformAdmin();
+      allow write: if false; // Server write only
+    }
+  }
+}

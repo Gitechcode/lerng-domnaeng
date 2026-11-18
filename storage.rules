@@ -1,0 +1,40 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isInstructor() {
+      return isAuthenticated() && (request.auth.token.role == 'instructor' || request.auth.token.role == 'platform_admin');
+    }
+    
+    function isValidImage() {
+      return request.resource.contentType.matches('image/.*')
+        && request.resource.size < 5 * 1024 * 1024; // 5MB max
+    }
+
+    // User avatars
+    match /avatars/{userId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId) && isValidImage();
+    }
+
+    // Course thumbnails and media
+    match /courses/{courseId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isInstructor() && isValidImage();
+    }
+
+    // Assignment submissions & worksheets
+    match /assignments/{userId}/{allPaths=**} {
+      allow read: if isOwner(userId) || isInstructor();
+      allow write: if isOwner(userId) && request.resource.size < 10 * 1024 * 1024;
+    }
+  }
+}

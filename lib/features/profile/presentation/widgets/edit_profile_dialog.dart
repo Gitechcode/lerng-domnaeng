@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:lerng_domnaeng/core/services/image_upload_service.dart';
 import 'package:lerng_domnaeng/core/theme/app_theme.dart';
 import '../../domain/profile_models.dart';
 
@@ -103,19 +104,26 @@ class _EditProfileDialogState extends State<EditProfileDialog> {
 
       if (image != null) {
         final bytes = await image.readAsBytes();
-        final base64String = base64Encode(bytes);
-        final dataUri = 'data:image/jpeg;base64,$base64String';
+        
+        // Upload image to remote storage server
+        final uploadResult = await ImageUploadService().uploadProfileImage(
+          imageBytes: bytes,
+          fileName: image.name,
+          userId: widget.userProfile.id,
+        );
+
+        final targetUrl = uploadResult.remoteUrl ?? 'data:image/jpeg;base64,${base64Encode(bytes)}';
 
         setState(() {
           _pickedImageBytes = bytes;
-          _photoUrl = dataUri;
+          _photoUrl = targetUrl;
           _isUploading = false;
         });
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text(' បានបញ្ចូលរូបថតកម្រងព័ត៌មានជោគជ័យ!'),
+              content: Text(' បាន Upload រូបថតទៅកាន់ Server ជោគជ័យ!'),
               backgroundColor: AppColors.primaryGreen,
               duration: Duration(seconds: 2),
             ),

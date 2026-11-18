@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'core/services/firebase_service.dart';
 import 'core/theme/app_theme.dart';
 import 'core/network/app_router.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await FirebaseService.initialize();
   runApp(
     const ProviderScope(
       child: LerngDomnaengApp(),
